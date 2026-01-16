@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QMessageBox
 )
 from PyQt5.QtCore import Qt
+from collections import Counter
 
 
 class ClassReplacePage(QWidget):
@@ -91,6 +92,7 @@ class ClassReplacePage(QWidget):
         if path:
             self.label_dir = path
             self.lbl_path.setText(path)
+        self.count_class_ids()
 
     def apply_replace(self):
         if not self.label_dir:
@@ -148,6 +150,41 @@ class ClassReplacePage(QWidget):
             f"影响文件: {replaced_files}\n"
             f"替换标注: {replaced_lines}"
         )
+        self.count_class_ids()
+
+    def count_class_ids(self):
+        """
+        统计当前标签文件夹中各 class id 的标注数量
+        """
+        if not self.label_dir:
+            QMessageBox.warning(self, "错误", "请先选择标签文件夹")
+            return
+
+        counter = Counter()
+
+        for fname in os.listdir(self.label_dir):
+            if not fname.endswith(".txt"):
+                continue
+            if fname.lower() == "classes.txt":
+                continue
+
+            path = os.path.join(self.label_dir, fname)
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    cls_id = line.split()[0]
+                    counter[cls_id] += 1
+
+        # ===== 输出结果 =====
+        self.log.append("=== 类别统计结果 ===")
+        for cls, cnt in sorted(counter.items(), key=lambda x: int(x[0]) if x[0].isdigit() else x[0]):
+            self.log.append(f"Class {cls}: {cnt}")
+
+        self.log.append(f"共 {len(counter)} 个不同 class")
+
 
 
 # ===== 允许独立运行 =====
