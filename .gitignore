@@ -204,4 +204,5 @@ calibration_*.npy
 args.yaml
 results.csv
 
-model
+model/
+train_log_*.txt
