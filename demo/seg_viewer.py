@@ -65,8 +65,12 @@ class SegViewer(QWidget):
         self.jump_btn = QPushButton("跳转")
         self.jump_input.returnPressed.connect(self.jump_to_index)
         self.jump_btn.clicked.connect(self.jump_to_index)
-
         bottom_layout = QHBoxLayout()
+        self.convert_btn = QPushButton("JSON ⇄ TXT 转换")
+        self.convert_btn.clicked.connect(self.convert_annotation)
+
+        bottom_layout.addWidget(self.convert_btn)
+
         bottom_layout.addWidget(self.status_label)
         bottom_layout.addStretch()
         bottom_layout.addWidget(QLabel("跳转到："))
@@ -226,6 +230,120 @@ class SegViewer(QWidget):
         if key not in self.colors:
             self.colors[key] = random_color(key)
         return self.colors[key]
+    
+    # ================= 格式转换 =================
+    def convert_annotation(self):
+        if not self.ann_dir or not self.img_dir:
+            return
+
+        json_files = list(self.ann_dir.glob("*.json"))
+        txt_files = list(self.ann_dir.glob("*.txt"))
+
+        # ---------- JSON -> YOLO ----------
+        if json_files:
+            out_dir = self.ann_dir / "yolo"
+            out_dir.mkdir(exist_ok=True)
+
+            for json_path in json_files:
+                img_path = self.img_dir / f"{json_path.stem}.jpg"
+                if not img_path.exists():
+                    img_path = self.img_dir / f"{json_path.stem}.png"
+                if not img_path.exists():
+                    continue
+
+                out_txt = out_dir / f"{json_path.stem}.txt"
+                json_to_yolo_seg(json_path, img_path, out_txt)
+
+            self.ann_dir = out_dir
+            self.show_current()
+            return
+
+        # ---------- YOLO -> JSON ----------
+        if txt_files:
+            out_dir = self.ann_dir / "json"
+            out_dir.mkdir(exist_ok=True)
+
+            for txt_path in txt_files:
+                img_path = self.img_dir / f"{txt_path.stem}.jpg"
+                if not img_path.exists():
+                    img_path = self.img_dir / f"{txt_path.stem}.png"
+                if not img_path.exists():
+                    continue
+
+                out_json = out_dir / f"{txt_path.stem}.json"
+                yolo_seg_to_json(txt_path, img_path, out_json)
+
+            self.ann_dir = out_dir
+            self.show_current()
+
+
+
+def json_to_yolo_seg(json_path, img_path, save_path):
+    img = cv2.imread(str(img_path))
+    h, w = img.shape[:2]
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    lines = []
+    for shape in data.get("shapes", []):
+        if shape.get("shape_type") != "polygon":
+            continue
+
+        label = shape.get("label", "0")
+        try:
+            cls = int(label)
+        except:
+            cls = abs(hash(label)) % 1000
+
+        norm = []
+        for x, y in shape["points"]:
+            norm.append(f"{x / w:.6f}")
+            norm.append(f"{y / h:.6f}")
+
+        lines.append(" ".join([str(cls)] + norm))
+
+    with open(save_path, "w") as f:
+        f.write("\n".join(lines))
+
+
+def yolo_seg_to_json(txt_path, img_path, save_path):
+    img = cv2.imread(str(img_path))
+    h, w = img.shape[:2]
+
+    shapes = []
+    with open(txt_path, "r") as f:
+        for line in f:
+            parts = line.strip().split()
+            cls = parts[0]
+            pts = list(map(float, parts[1:]))
+
+            points = []
+            for i in range(0, len(pts), 2):
+                points.append([
+                    pts[i] * w,
+                    pts[i + 1] * h
+                ])
+
+            shapes.append({
+                "label": str(cls),
+                "shape_type": "polygon",
+                "points": points
+            })
+
+    data = {
+        "version": "5.0.1",
+        "flags": {},
+        "shapes": shapes,
+        "imagePath": img_path.name,
+        "imageHeight": h,
+        "imageWidth": w
+    }
+
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 
 
 if __name__ == "__main__":
